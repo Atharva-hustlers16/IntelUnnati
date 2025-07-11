@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Loader2, Send, PhoneOff, Mic, Video, User, FileText } from "lucide-react"
+import { Loader2, Send, PhoneOff, Mic, Video, User, FileText, Camera, CheckCircle } from "lucide-react"
 import Image from "next/image"
 
 import { AppHeader } from "@/components/app-header"
@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast"
 import { teleConsultationSupport, type TeleConsultationSupportOutput } from "@/ai/flows/tele-consultation-support"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
 
 const formSchema = z.object({
   medicalHistory: z.string().min(1, "Required"),
@@ -29,7 +30,47 @@ const formSchema = z.object({
 export default function TeleConsultationPage() {
   const [summary, setSummary] = useState<TeleConsultationSupportOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const getCameraPermission = async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Unsupported Browser",
+          description: "Your browser does not support camera access.",
+        });
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        setHasCameraPermission(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (error) {
+        console.error("Error accessing camera:", error);
+        setHasCameraPermission(false);
+        toast({
+          variant: "destructive",
+          title: "Camera Access Denied",
+          description: "Please enable camera permissions in your browser settings to use this feature.",
+        });
+      }
+    };
+
+    getCameraPermission();
+    
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [toast]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -76,11 +117,22 @@ export default function TeleConsultationPage() {
               <CardDescription>Connect with a doctor for a remote consultation.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col gap-4">
-              <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-card-foreground">
-                <Image src="https://placehold.co/600x400.png" data-ai-hint="doctor video call" layout="fill" objectFit="cover" alt="Doctor's video feed" />
+              <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                 <Image src="https://placehold.co/600x400.png" data-ai-hint="doctor video call" layout="fill" objectFit="cover" alt="Doctor's video feed" />
                 <div className="absolute bottom-4 left-4 bg-black/50 text-white p-2 rounded-lg text-sm font-semibold">Dr. Anjali Sharma</div>
-                 <div className="absolute top-4 right-4 aspect-video w-1/4 rounded-lg overflow-hidden border-2 border-background">
-                    <Image src="https://placehold.co/150x100.png" data-ai-hint="patient video call" layout="fill" objectFit="cover" alt="Patient's video feed" />
+                 <div className="absolute top-4 right-4 aspect-video w-1/4 rounded-lg overflow-hidden border-2 border-background bg-card-foreground">
+                    <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+                    {hasCameraPermission === null && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white">
+                        <Loader2 className="h-6 w-6 animate-spin" />
+                      </div>
+                    )}
+                    {hasCameraPermission === false && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-2 text-center">
+                        <Camera className="h-6 w-6 text-destructive mb-2" />
+                        <p className="text-xs">Camera access denied</p>
+                      </div>
+                    )}
                 </div>
               </div>
               <div className="flex justify-center items-center gap-4">
